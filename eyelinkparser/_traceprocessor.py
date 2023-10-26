@@ -22,11 +22,17 @@ import functools
 from datamatrix import series as srs
 
 
-def _fnc(label, trace, blinkreconstruct, downsample, mode):
+def _fnc(label, trace, blinkreconstruct, downsample, mode, margin, maxdur, vt_start, vt_end, gap_vt):
 
-    if label == 'pupil' and blinkreconstruct:
+    if (label == 'lpupil' or label == 'rpupil') and blinkreconstruct:
         try:
-            trace = srs._blinkreconstruct(trace, mode=mode)
+            trace = srs._blinkreconstruct(trace, 
+                                          mode=mode, 
+                                          margin=margin, 
+                                          maxdur=maxdur, 
+                                          vt_start=vt_start, 
+                                          vt_end=vt_end,
+                                          gap_vt=gap_vt)
         except TypeError:
             warn('blinkreconstruct does not support mode keyword. '
                  'Please update datamatrix.')
@@ -36,7 +42,7 @@ def _fnc(label, trace, blinkreconstruct, downsample, mode):
 
 
 def defaulttraceprocessor(blinkreconstruct=False,
-                          downsample=None, mode='original'):
+                          downsample=None, mode='original',margin=10,maxdur=500,vt_start=10,vt_end=5, gap_vt=10):
     """
     desc:
         Creates a function that is suitable as traceprocessor argument for
@@ -67,5 +73,10 @@ def defaulttraceprocessor(blinkreconstruct=False,
         _fnc,
         blinkreconstruct=blinkreconstruct,
         downsample=downsample,
-        mode=mode
+        mode=mode,
+        margin=margin,
+        maxdur=maxdur,
+        vt_start=vt_start,
+        vt_end=vt_end,
+        gap_vt=gap_vt
     )

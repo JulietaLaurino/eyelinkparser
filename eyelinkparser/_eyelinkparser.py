@@ -131,7 +131,10 @@ class EyeLinkParser(object):
         asc_encoding=None,
         pupil_size=True,
         gaze_pos=True,
-        time_trace=True
+        time_trace=True,
+        beginning_msg = None,
+        end_msg = None,
+        eyes_recorded = 'both'
     ):
         self.dm = DataMatrix()
         if downsample is not None:
@@ -150,6 +153,9 @@ class EyeLinkParser(object):
         self._pupil_size = pupil_size
         self._gaze_pos = gaze_pos
         self._time_trace = time_trace
+        self._beginning_msg = beginning_msg
+        self._end_msg = end_msg
+        self._eyes_recorded = eyes_recorded
         # Get a list of input files. First, only files in the data folder that
         # match any of the extensions. Then, these files are passed to the
         # converter which may return multiple files, for example if they have
@@ -254,11 +260,21 @@ class EyeLinkParser(object):
         self._linestack = []
         trialdms = []
         with open(path, encoding=self._asc_encoding) as f:
-            for line in self.stacked_file(f):
+            for line in self.stacked_file(f):               
                 # Only messages can be start-trial messages, so performance we
                 # don't do anything with non-MSG lines.
-                if not self.is_message(line):
+                if not (self.is_message(line) or self.is_start_info(line)):
                     continue
+                if self.is_start_info(line):
+                    first_eye = self.split(line)[2]
+                    second_eye = self.split(line)[3]
+                    if first_eye == 'LEFT':
+                        if second_eye == 'RIGHT':
+                            self._eyes_recorded = 'both'
+                        else:
+                            self._eyes_recorded = 'left'
+                    else:
+                        self._eyes_recorded = 'right'
                 if self.is_start_trial(self.split(line)):
                     ntrial += 1
                     self.print_(u'.')
@@ -358,40 +374,58 @@ class EyeLinkParser(object):
         if u'ptrace_%s' % self.current_phase in self.trialdm:
             raise Exception('Phase {} occurs twice (timestamp:{})'.format(
                 self.current_phase, l[1]))
-        self.ptrace = []
-        self.xtrace = []
-        self.ytrace = []
+        self.lptrace = []
+        self.lxtrace = []
+        self.lytrace = []
+        self.rptrace = []
+        self.rxtrace = []
+        self.rytrace = []
         self.ttrace = []
-        self.fixxlist = []
-        self.fixylist = []
-        self.fixstlist = []
-        self.fixetlist = []
-        self.blinkstlist = []
-        self.blinketlist = []
+        self.lfixxlist = []
+        self.lfixylist = []
+        self.lfixstlist = []
+        self.lfixetlist = []
+        self.rfixxlist = []
+        self.rfixylist = []
+        self.rfixstlist = []
+        self.rfixetlist = []
+        self.lblinkstlist = []
+        self.lblinketlist = []
+        self.rblinkstlist = []
+        self.rblinketlist = []
         self._t_onset = self.trialdm['t_onset_%s' % self.current_phase] = l[1]
 
     def end_phase(self, l):
 
         self.trialdm['t_offset_%s' % self.current_phase] = l[1]
-        self.trialdm['trace_length_%s' % self.current_phase] = len(self.ptrace)
+        self.trialdm['trace_length_%s' % self.current_phase] = len(self.lptrace)
         for i, (tracelabel, prefix, trace) in enumerate([
-            (u'pupil', u'ptrace_', self.ptrace),
-            (u'xcoor', u'xtrace_', self.xtrace),
-            (u'ycoor', u'ytrace_', self.ytrace),
+            (u'lpupil', u'lptrace_', self.lptrace),
+            (u'lxcoor', u'lxtrace_', self.lxtrace),
+            (u'lycoor', u'lytrace_', self.lytrace),
+            (u'rpupil', u'rptrace_', self.rptrace),
+            (u'rxcoor', u'rxtrace_', self.rxtrace),
+            (u'rycoor', u'rytrace_', self.rytrace),
             (u'time', u'ttrace_', self.ttrace),
-            (None, u'fixxlist_', self.fixxlist),
-            (None, u'fixylist_', self.fixylist),
-            (None, u'fixstlist_', self.fixstlist),
-            (None, u'fixetlist_', self.fixetlist),
-            (None, u'blinkstlist_', self.blinkstlist),
-            (None, u'blinketlist_', self.blinketlist),
+            (None, u'lfixxlist_', self.lfixxlist),
+            (None, u'lfixylist_', self.lfixylist),
+            (None, u'lfixstlist_', self.lfixstlist),
+            (None, u'lfixetlist_', self.lfixetlist),
+            (None, u'rfixxlist_', self.rfixxlist),
+            (None, u'rfixylist_', self.rfixylist),
+            (None, u'rfixstlist_', self.rfixstlist),
+            (None, u'rfixetlist_', self.rfixetlist),            
+            (None, u'lblinkstlist_', self.lblinkstlist),
+            (None, u'lblinketlist_', self.lblinketlist),
+            (None, u'rblinkstlist_', self.rblinkstlist),
+            (None, u'rblinketlist_', self.rblinketlist),            
         ]):
-            if tracelabel == 'pupil' and not self._pupil_size:
+            if tracelabel in ('lpupil', 'rpupil') and not self._pupil_size:
                 continue
-            if tracelabel in ('xcoor', 'ycoor') and not self._gaze_pos:
+            if tracelabel in ('lxcoor', 'lycoor','rxcoor', 'rycoor') and not self._gaze_pos:
                 continue
             if tracelabel == 'time' and not self._time_trace:
-                continue
+                continue           
             trace = np.array(trace, dtype=float)
             if tracelabel is not None and self._traceprocessor is not None:
                 trace = self._traceprocessor(tracelabel, trace)
@@ -405,9 +439,11 @@ class EyeLinkParser(object):
                 len(trace), defaultnan=True)
             self.trialdm[colname][0] = trace
             # Start the time trace at 0
-            if len(trace) and prefix in ('ttrace_', 'fixstlist_',
-                                         'fixetlist_', 'blinkstlist',
-                                         'blinketlist'):
+            if len(trace) and prefix in ('ttrace_', 'lfixstlist_',
+                                         'lfixetlist_', 'rfixstlist_',
+                                         'rfixetlist_', 'lblinkstlist',
+                                         'lblinketlist',  'rblinkstlist',
+                                         'rblinketlist'):
                 self.trialdm[colname][0] -= self._t_onset
         # DEBUG CODE
         # 	from matplotlib import pyplot as plt
@@ -422,21 +458,33 @@ class EyeLinkParser(object):
     def parse_sample(self, s):
 
         self.ttrace.append(s.t)
-        self.ptrace.append(s.pupil_size)
-        self.xtrace.append(s.x)
-        self.ytrace.append(s.y)
+        self.lptrace.append(s.lpupil_size)
+        self.lxtrace.append(s.lx)
+        self.lytrace.append(s.ly)
+        self.rptrace.append(s.rpupil_size)
+        self.rxtrace.append(s.rx)
+        self.rytrace.append(s.ry)        
 
     def parse_fixation(self, f):
-
-        self.fixxlist.append(f.x)
-        self.fixylist.append(f.y)
-        self.fixstlist.append(f.st)
-        self.fixetlist.append(f.et)
+        if f.eye == 'L':
+            self.lfixxlist.append(f.x)
+            self.lfixylist.append(f.y)
+            self.lfixstlist.append(f.st)
+            self.lfixetlist.append(f.et)
+        elif f.eye == 'R':
+            self.rfixxlist.append(f.x)
+            self.rfixylist.append(f.y)
+            self.rfixstlist.append(f.st)
+            self.rfixetlist.append(f.et)
         
     def parse_blink(self, b):
         
-        self.blinkstlist.append(b.st)
-        self.blinketlist.append(b.et)
+        if b.eye == 'L':
+            self.lblinkstlist.append(b.st)
+            self.lblinketlist.append(b.et)
+        elif b.eye == 'R':
+            self.rblinkstlist.append(b.st)
+            self.rblinketlist.append(b.et)        
 
     def parse_phase(self, l):
 
@@ -459,7 +507,7 @@ class EyeLinkParser(object):
                 return
         if self.current_phase is None:
             return
-        s = sample(l)
+        s = sample(l, self._eyes_recorded)
         if s is not None:
             self.parse_sample(s)
             return
@@ -473,12 +521,12 @@ class EyeLinkParser(object):
     def is_start_trial(self, l):
 
         # MSG	6735155 start_trial 1
-        if self.match(l, u'MSG', int, u'start_trial', ANY_VALUE):
-            self.trialid = l[3]
-            self.current_phase = None
-            return True
+        # if self.match(l, u'MSG', int, (u'beginning-of-assoc1', u'beginning-of-assoc2'), ANY_VALUE):
+        #     self.trialid = l[3]
+        #     self.current_phase = None
+        #     return True
         # MSG	6735155 start_trial
-        if self.match(l, u'MSG', int, u'start_trial'):
+        if self.match(l, u'MSG', int, self._beginning_msg):
             if self.trialid is None:
                 self.trialid = 0
             else:
@@ -490,7 +538,7 @@ class EyeLinkParser(object):
     def is_end_trial(self, l):
 
         # MSG	6740629 end_trial
-        if self.match(l, u'MSG', int, (u'end_trial', u'stop_trial')):
+        if self.match(l, u'MSG', int, self._end_msg):
             self.trialid = None
             return True
         return False
@@ -498,6 +546,10 @@ class EyeLinkParser(object):
     def is_message(self, line):
 
         return line.startswith(u'MSG')
+    
+    def is_start_info(self, line):
+        # START	1972148 	LEFT	SAMPLES	EVENTS
+        return line.startswith(u'START')
 
     def split(self, line):
 

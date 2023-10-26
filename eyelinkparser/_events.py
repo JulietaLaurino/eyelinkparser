@@ -52,6 +52,7 @@ class Blink(Event):
     
     def __init__(self, l):
         self.assert_numeric(l, range(2, 5))
+        self.eye = l[1]
         self.st = l[2]
         self.et = l[3]
         self.duration = l[4]
@@ -74,6 +75,7 @@ class Fixation(Event):
 
     def __init__(self, l):
         self.assert_numeric(l, range(2,8))
+        self.eye = l[1]
         self.x = l[5]
         self.y = l[6]
         self.pupil_size = l[7]
@@ -90,7 +92,7 @@ class Sample(Event):
 
     """
     desc:
-        # Normal: [Timestamp] [x] [y] [pupil size] ...
+        # Normal: [Timestamp] [lx] [ly] [lpupil size] [rx] [ry] [rpupil size] ...
         4815155   168.2   406.5  2141.0 ...
         # During blinks:
         661781	   .	   .	    0.0	...
@@ -100,22 +102,69 @@ class Sample(Event):
         4333109	  981.4	  525.8	 1361.0	32768.0	...
     """
 
-    def __init__(self, l):
+    def __init__(self, l, eyes_recorded):
 
         self.assert_numeric(l, [0])
         self.t = l[0]
-        if l[1] == '.':
-            self.x = np.nan
-        else:
-            self.x = l[1]
-        if l[2] == '.':
-            self.y = np.nan
-        else:
-            self.y = l[2]
-        if l[3] in (0, '.'):
-            self.pupil_size = np.nan
-        else:
-            self.pupil_size = l[3]
+        if eyes_recorded == 'both':
+            if l[1] == '.':
+                self.lx = np.nan
+            else:
+                self.lx = l[1]
+            if l[2] == '.':
+                self.ly = np.nan
+            else:
+                self.ly = l[2]
+            if l[3] in (0, '.'):
+                self.lpupil_size = np.nan
+            else:
+                self.lpupil_size = l[3]
+            if l[4] == '.':
+                self.rx = np.nan
+            else:
+                self.rx = l[4]
+            if l[5] == '.':
+                self.ry = np.nan
+            else:
+                self.ry = l[5]
+            if l[6] in (0, '.'):
+                self.rpupil_size = np.nan
+            else:
+                self.rpupil_size = l[6]         
+        elif eyes_recorded == 'right': 
+            if l[1] == '.':
+                self.rx = np.nan
+            else:
+                self.rx = l[1]
+            if l[2] == '.':
+                self.ry = np.nan
+            else:
+                self.ry = l[2]
+            if l[3] in (0, '.'):
+                self.rpupil_size = np.nan
+            else:
+                self.rpupil_size = l[3]
+            self.lx = np.nan
+            self.ly = np.nan
+            self.lpupil_size = np.nan
+        elif eyes_recorded == 'left': 
+            if l[1] == '.':
+                self.lx = np.nan
+            else:
+                self.lx = l[1]
+            if l[2] == '.':
+                self.ly = np.nan
+            else:
+                self.ly = l[2]
+            if l[3] in (0, '.'):
+                self.lpupil_size = np.nan
+            else:
+                self.lpupil_size = l[3]
+            self.rx = np.nan
+            self.ry = np.nan
+            self.rpupil_size = np.nan
+
+            
             
     @staticmethod
     def match(l):
@@ -147,6 +196,7 @@ class Saccade(Event):
             self.ex = l[11]
             self.ey = l[12]
         self.size = np.sqrt((self.sx-self.ex)**2 + (self.sy-self.ey)**2)
+        self.eye = l[1]
         self.st = l[2]
         self.et = l[3]
         self.duration = self.et - self.st
@@ -156,12 +206,12 @@ class Saccade(Event):
         return len(l) in (11, 15) and l[0] == 'ESACC'
 
 
-def event(l, cls):
+def event(l, cls, *args):
 
     if not cls.match(l):
         return None
     try:
-        return cls(l)
+        return cls(l, *args)
     except TypeError:
         pass
     except Exception as e:
@@ -169,8 +219,8 @@ def event(l, cls):
             u'Unexpected exception during parsing of %s' % safe_decode(e))
 
 
-def sample(l):
-    return event(l, Sample)
+def sample(l, eyes_recorded):
+    return event(l, Sample, eyes_recorded)
 def fixation(l):
     return event(l, Fixation)
 def saccade(l):
